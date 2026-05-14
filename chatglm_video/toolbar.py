@@ -336,6 +336,146 @@ def _confirm_generation_dialogs_on_page(page, mode: str) -> bool:
     return False
 
 
+def _scroll_page_end_for_toolbar(page) -> None:
+    for fr in page.frames:
+        try:
+            fr.evaluate(
+                "() => window.scrollTo(0, Math.max(document.body?.scrollHeight || 0, document.documentElement?.scrollHeight || 0))"
+            )
+        except PlaywrightError:
+            pass
+    try:
+        page.keyboard.press("End")
+    except PlaywrightError:
+        pass
+    time.sleep(0.35)
+
+
+def _try_open_basic_params_panel(page) -> bool:
+    """点击底部「基础参数」，打开设置浮层。"""
+    for fr in page.frames:
+        try:
+            b = fr.get_by_role("button", name=re.compile(r"基础参数"))
+            if b.count() > 0:
+                el = b.first
+                if el.is_visible():
+                    el.scroll_into_view_if_needed(timeout=5000)
+                    el.click(timeout=8000)
+                    return True
+        except PlaywrightError:
+            pass
+        try:
+            loc = fr.locator("button, [role='button']").filter(
+                has_text=re.compile(r"基础参数")
+            )
+            if loc.count() > 0:
+                el = loc.first
+                if el.is_visible():
+                    el.scroll_into_view_if_needed(timeout=5000)
+                    el.click(timeout=8000)
+                    return True
+        except PlaywrightError:
+            pass
+        try:
+            if fr.evaluate(
+                """() => {
+  for (const el of document.querySelectorAll('button, [role="button"], div, span')) {
+    let t = '';
+    try {
+      t = (el.innerText || el.getAttribute('aria-label') || '')
+        .replace(/\\s+/g, ' ')
+        .trim();
+    } catch (e) {
+      continue;
+    }
+    if (!t.includes('基础参数')) continue;
+    if (t.length > 40) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) continue;
+    const cy = r.top + r.height / 2;
+    if (cy < window.innerHeight * 0.42) continue;
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    return true;
+  }
+  return false;
+}"""
+            ):
+                return True
+        except PlaywrightError:
+            pass
+    return False
+
+
+def _try_select_resolution_1080p_in_open_panels(page) -> bool:
+    """在已打开的「基础参数」浮层内将「视频分辨率」点到 1080P；已是 1080P 返回 True。"""
+    pick_js = """() => {
+  const roots = document.querySelectorAll(
+    '.style-wrap, .el-popover, div.popper, [class*="style-wrap"], [class*="ns_popover"]'
+  );
+  for (const w of roots) {
+    let tx = '';
+    try {
+      tx = (w.innerText || '');
+    } catch (e) {
+      continue;
+    }
+    if (!tx.includes('视频分辨率') || !tx.includes('1080')) continue;
+    const br = w.getBoundingClientRect();
+    if (br.width < 20 || br.height < 20) continue;
+    const st = window.getComputedStyle(w);
+    if (st.display === 'none' || st.visibility === 'hidden') continue;
+    if (parseFloat(st.opacity || '1') < 0.05) continue;
+    const items = w.querySelectorAll(
+      '.option-item, .prompt-item, div[class*="option-item"], div[class*="prompt-item"]'
+    );
+    for (const it of items) {
+      let t = '';
+      try {
+        t = (it.innerText || '').replace(/\\s+/g, ' ').trim();
+      } catch (e) {
+        continue;
+      }
+      if (!/1080\\s*P/i.test(t) && !t.includes('1080P')) continue;
+      const c = it.getAttribute('class') || '';
+      if (/\\bselected\\b/.test(c) || (/\\bactive\\b/.test(c) && /\\bcur\\b/.test(c)))
+        return 2;
+      it.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      return 1;
+    }
+  }
+  return 0;
+}"""
+    for fr in page.frames:
+        try:
+            code = fr.evaluate(pick_js)
+            if code in (1, 2):
+                return True
+        except PlaywrightError:
+            continue
+    return False
+
+
+def set_basic_params_resolution_1080p(page, *, timeout: float = 25.0) -> bool:
+    """打开「基础参数」并将「视频分辨率」设为 1080P（已是则跳过）。
+
+    在切换为「参考图生成」后调用；若浮层已打开会先尝试直接点选。
+    """
+    deadline = time.time() + timeout
+    _scroll_page_end_for_toolbar(page)
+    while time.time() < deadline:
+        if _try_select_resolution_1080p_in_open_panels(page):
+            return True
+        if not _try_open_basic_params_panel(page):
+            time.sleep(0.35)
+            continue
+        time.sleep(0.5)
+        while time.time() < deadline:
+            if _try_select_resolution_1080p_in_open_panels(page):
+                return True
+            time.sleep(0.22)
+    return False
+
+
 def enter_image2video(page) -> bool:
     """清影：先点「通用生成」→ 弹窗「生成类型」→ 选「参考图生成」；若已是参考图模式则跳过。"""
 

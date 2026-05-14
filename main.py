@@ -43,7 +43,11 @@ from chatglm_video.login_state import video_studio_appears_logged_in
 from chatglm_video.page_health import is_page_crashed
 from chatglm_video.send import click_video_send_button
 from chatglm_video.stealth import apply_stealth_to_context
-from chatglm_video.toolbar import enter_image2video, wait_toolbar_shows_reference
+from chatglm_video.toolbar import (
+    enter_image2video,
+    set_basic_params_resolution_1080p,
+    wait_toolbar_shows_reference,
+)
 
 
 # 字号（点）；字体族在运行时按系统从本机已安装字体中解析
@@ -879,6 +883,13 @@ class ChatGLMVideoApp(tk.Tk):
 
             if enter_image2video(page) and wait_toolbar_shows_reference(page, 4):
                 self._append_log("当前为「参考图生成」模式。", kind="ok")
+                if set_basic_params_resolution_1080p(page, timeout=22.0):
+                    self._append_log("已设基础参数 · 视频分辨率 1080P。", kind="ok")
+                else:
+                    self._append_log(
+                        "未能自动将视频分辨率设为 1080P，请在「基础参数」中手动选择。",
+                        kind="warn",
+                    )
             else:
                 self._append_log(
                     "未能确认参考图模式；每张上传前会自动再切换。",
@@ -916,6 +927,13 @@ class ChatGLMVideoApp(tk.Tk):
                     if not enter_image2video(page):
                         sleep_jittered(*JITTER_PAGE_RELOAD_LONG)
                     wait_toolbar_shows_reference(page, 8)
+                    if set_basic_params_resolution_1080p(page, timeout=22.0):
+                        self._append_log("已设基础参数 · 视频分辨率 1080P。", kind="ok")
+                    else:
+                        self._append_log(
+                            "未能自动将视频分辨率设为 1080P，请在「基础参数」中手动选择。",
+                            kind="warn",
+                        )
                 except Exception as e:
                     self._append_log(f"刷新失败：{e}", kind="warn")
 
@@ -976,6 +994,14 @@ class ChatGLMVideoApp(tk.Tk):
                             sleep_jittered(*JITTER_PAGE_RELOAD)
                             if not enter_image2video(page):
                                 sleep_jittered(*JITTER_PAGE_RELOAD_LONG)
+                            if wait_toolbar_shows_reference(page, 8):
+                                if not set_basic_params_resolution_1080p(
+                                    page, timeout=22.0
+                                ):
+                                    self._append_log(
+                                        "未能自动将视频分辨率设为 1080P（页面恢复后请手动检查）。",
+                                        kind="warn",
+                                    )
                             continue
                         except Exception as e:
                             self._append_log(f"刷新失败：{e}", kind="err")
@@ -1108,6 +1134,12 @@ class ChatGLMVideoApp(tk.Tk):
                                 sleep_step_gap()
                                 batch_aborted = True
                                 break
+
+                            if not set_basic_params_resolution_1080p(page, timeout=22.0):
+                                self._append_log(
+                                    "未能自动将视频分辨率设为 1080P，请在「基础参数」中手动选择后继续。",
+                                    kind="warn",
+                                )
 
                             fin = page.locator("input[type='file']").first
                             fin.set_input_files(img_path)
